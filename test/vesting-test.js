@@ -39,9 +39,9 @@ describe("Token test", function () {
 				const member = await vesting.members(j);
 				const amount = ethers.utils.formatEther((await vesting.vestingTimeScheduleList(time, member))[0])
 				const day = moment.unix(time).format("YYYY-MM-DD")
-				// console.log(`${day} - ${member} - ${amount}`)
+				console.log(`${day} - ${member} - ${amount}`)
 			}
-			// console.log('\n');
+			console.log('\n');
 		}
     });
 
