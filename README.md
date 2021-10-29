@@ -1,29 +1,88 @@
 # Ghospers-Vesting-Contract
 
-## Install
-    yarn install
+## User Guide
 
-After that need to add `config.js` file. Example you can find in `config.example.js` file.
+### 1. Deposit initial tokens in contract. 
+Owner(or another one) must transfer 75,000,000+ GHSP 
 
-## Added plugins
-* [**@openzeppelin/contracts@4.2.0**](https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.2.0/contracts) - Standart OpenZeppelin's contract library.
 
-* [**hardhat**](https://hardhat.org/getting-started/) - Solidity development environment.
 
-* [**hardhat-abi-exporter**](https://hardhat.org/plugins/hardhat-abi-exporter.html) - Exports smart contract ABIs on compilation. It will run automatically on compilation.
+### 2. Add admin (owner permission)
+To add admin, you need to be the vesting contract's owner.
+Please call addAdmin function to add an admin.
+If you want, you can remove the admin using removeAdmin function.
 
-* [**hardhat-contract-sizer**](https://hardhat.org/plugins/hardhat-contract-sizer.html) - Writes bytecode sizes of smart contracts. It will run automatically on compilation.
+```solidity
+    function addAdmin(address _address) external onlyOwner {
+        require(_address != address(0x0), "Zero address");
+        require(!admins[_address], "This address is already added as an admin");
+        admins[_address] = true;
+        emit AddAdmin(_address);
+    }
 
-* [**hardhat-gas-reporter**](https://hardhat.org/plugins/hardhat-gas-reporter.html) - Writes information of gas usage in tests. It will run automatically on tests.
+    function removeAdmin(address _address) external onlyOwner {
+        require(_address != address(0x0), "Zero address");
+        require(admins[_address], "This address is not admin");
+        admins[_address] = false;
+        emit RemoveAdmin(_address);
+    }
+```
 
-* [**hardhat-spdx-license-identifier**](https://hardhat.org/plugins/hardhat-spdx-license-identifier.html) - Writes SPDX License Identifier into sol files. It will run automatically on compilation.
+### 3. Unlock Tokens (admin permission)
+To unlock tokens, you need to be the vesting contract's admin.
+Please call unlockToken function to unlock the locked tokens and transfer to members.
 
-* [**hardhat-tracer**](https://hardhat.org/plugins/hardhat-tracer.html) - Prints events when running tests.
+```solidity
+    function unlockToken() external onlyAdmin {
+        require(releasedVestingId < 25, "Lock period End and All locked tokens were unlocked");
+        uint256 currentTime = getCurrentTime();
+        uint256 startTime = vestingTimeList[releasedVestingId];
+        require(currentTime >= startTime, "You can't run unlockToken function now");
+        if (releasedVestingId == 0) {
+            require(_token.balanceOf(address(this)) >= initialTotalAmount, "You need to deposit 75000000 GHSPs into this contract before you start this contract.");
+        }
+        for (uint256 i = 0; i < members.length; i++) {
+            VestingAddress memory vestingAddress = vestingTimeScheduleList[startTime][members[i]];
+            if (!vestingAddress.isSent) {
+                require(_token.transfer(members[i], vestingAddress.amount), "Token transfer error");
+                vestingTimeScheduleList[startTime][members[i]].isSent = true;
+            }
+        }
+        emit UnlockTokens(vestingDateList[releasedVestingId]);
+        releasedVestingId = releasedVestingId + 1;
+    }
+```
 
-* [**solidity-coverage**](https://hardhat.org/plugins/solidity-coverage.html) - Solidity code coverage plugin.
+### In a special case, member can withdraw unlocked tokens by himself.
+if admin doesn't run the unlock function on scheduled date, members can withdraw their unlocked tokens.
+Just call withdrawByMember function.
 
-* [**@nomiclabs/hardhat-etherscan**](https://hardhat.org/plugins/nomiclabs-hardhat-etherscan.html) - Automatic verification on etherscan, bscscan and others.
+```solidity
+    function withdrawByMember() external {
+        uint256 currentTime = getCurrentTime();
+        for (uint256 i = 0; i < members.length; i++) {
+            if (members[i] == _msgSender()) {
+                for (uint256 j = 0; j < vestingTimeList.length; j++) {
+                    if (currentTime >= vestingTimeList[j] && !vestingTimeScheduleList[vestingTimeList[j]][_msgSender()].isSent) {
+                        require(_token.transfer(_msgSender(), vestingTimeScheduleList[vestingTimeList[j]][_msgSender()].amount), "Token transfer error");
+                        vestingTimeScheduleList[vestingTimeList[j]][_msgSender()].isSent = true;
+                    }
+                }
+            }
+        }
+    }
+```
 
-* [**@nomiclabs/hardhat-solhint**](https://hardhat.org/plugins/nomiclabs-hardhat-solhint.html) - Solidity linter
+### After the vesting period, owner can withdraw left tokens from the contract.
+If owner deposit more tokens than initial token supply, then owner will be able to withdraw.
+Just call withdrawLeftTokens function. 
+However, you must call it after the vesting period, or the transaction will be reverted.
 
-* [**prettier**](https://www.npmjs.com/package/prettier) - Formatter. Run with script `prettier` of npm.
+```solidity
+    function withdrawLeftTokens() external onlyOwner {
+        require(releasedVestingId >= 25, "You can't withdraw now because the vesting period is not end.");
+        uint256 contractBalance = _token.balanceOf(address(this));
+        require(_token.transfer(_msgSender(), contractBalance), "Token transfer error");
+        emit Withdraw(_msgSender(), contractBalance);
+    }
+```
